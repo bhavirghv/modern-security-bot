@@ -153,9 +153,29 @@ async def run_bot():
     if not token:
         raise RuntimeError("DISCORD_TOKEN environment variable is not set!")
 
-    await bot.start(token)
+async def run_bot():
+    """Initialise DB, load cogs, then start the Discord bot."""
+    await db.initialize()
+    bot.db = db
 
+    for cog in COGS:
+        try:
+            await bot.load_extension(cog)
+            print(f"✅ Loaded cog: {cog}")
+        except Exception as exc:
+            print(f"❌ Failed to load {cog}: {exc}")
 
+    token = os.getenv("DISCORD_TOKEN")
+    if not token:
+        raise RuntimeError("DISCORD_TOKEN not set!")
+
+    try:
+        await bot.start(token)
+    except Exception as e:
+        print("🔥 Bot crashed:", e)
+        await asyncio.sleep(15)
+
+        
 def run_fastapi():
     """Launch uvicorn in the background thread."""
     port = int(os.getenv("PORT", 10000))
