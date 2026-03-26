@@ -20,21 +20,22 @@ from database import Database
 load_dotenv()
 
 print("🔥 MAIN FILE STARTED")
+
 # ── Intents ────────────────────────────────────────────────────────────────────
 intents = discord.Intents.all()
 
 # ── Bot ────────────────────────────────────────────────────────────────────────
 bot = commands.Bot(
-    command_prefix="!",   # prefix not used (slash only), but required by library
+    command_prefix="!",
     intents=intents,
     help_command=None,
     description="Modern Security — Production Moderation Bot"
 )
 
-# ── Database (shared singleton) ────────────────────────────────────────────────
+# ── Database ───────────────────────────────────────────────────────────────────
 db = Database()
 
-# ── Cogs to load ──────────────────────────────────────────────────────────────
+# ── Cogs ───────────────────────────────────────────────────────────────────────
 COGS = [
     "cogs.moderation",
     "cogs.automod",
@@ -54,48 +55,43 @@ api = FastAPI(
 )
 
 
-@api.get("/", tags=["Status"])
+@api.get("/")
 async def root():
-    """Health check + bot info."""
     return {
         "status": "Modern Security Bot Running",
-        "bot_name":   str(bot.user) if bot.is_ready() else "Starting…",
-        "guilds":     len(bot.guilds) if bot.is_ready() else 0,
+        "bot_name": str(bot.user) if bot.is_ready() else "Starting…",
+        "guilds": len(bot.guilds) if bot.is_ready() else 0,
         "latency_ms": round(bot.latency * 1000, 2) if bot.is_ready() else None,
     }
 
 
-@api.get("/health", tags=["Status"])
+@api.get("/health")
 async def health():
     return {"status": "ok"}
 
 
-@api.get("/trust/{user_id}", tags=["Trust"])
+@api.get("/trust/{user_id}")
 async def get_trust(user_id: int, guild_id: int):
-    """Look up a user's trust score in a specific guild."""
     score = await db.get_trust_score(user_id, guild_id)
     return {"user_id": user_id, "guild_id": guild_id, "trust_score": score}
 
 
-@api.get("/cases/{case_id}", tags=["Cases"])
+@api.get("/cases/{case_id}")
 async def get_case(case_id: int):
-    """Retrieve a single moderation case by ID."""
     case = await db.get_case(case_id)
     if not case:
         return JSONResponse(status_code=404, content={"error": "Case not found"})
     return case
 
 
-@api.get("/cases", tags=["Cases"])
+@api.get("/cases")
 async def list_cases():
-    """Return all moderation cases (newest first)."""
     cases = await db.get_all_cases()
     return {"cases": cases, "total": len(cases)}
 
 
-@api.get("/reports", tags=["Reports"])
+@api.get("/reports")
 async def get_reports():
-    """Return all user reports."""
     reports = await db.get_all_reports()
     return {"reports": reports, "total": len(reports)}
 
@@ -106,13 +102,13 @@ async def get_reports():
 
 @bot.event
 async def on_ready():
-    print(f"✅  Logged in as {bot.user} (ID: {bot.user.id})")
-    print(f"📡  Connected to {len(bot.guilds)} guild(s)")
+    print(f"✅ Logged in as {bot.user} (ID: {bot.user.id})")
+    print(f"📡 Connected to {len(bot.guilds)} guild(s)")
     try:
         synced = await bot.tree.sync()
-        print(f"✅  Synced {len(synced)} slash command(s)")
+        print(f"✅ Synced {len(synced)} slash command(s)")
     except Exception as exc:
-        print(f"❌  Failed to sync commands: {exc}")
+        print(f"❌ Failed to sync commands: {exc}")
 
     await bot.change_presence(
         activity=discord.Activity(
@@ -125,38 +121,49 @@ async def on_ready():
 @bot.event
 async def on_guild_join(guild: discord.Guild):
     await db.ensure_config(guild.id)
-    print(f"📥  Joined guild: {guild.name} ({guild.id})")
+    print(f"📥 Joined guild: {guild.name} ({guild.id})")
 
 
 @bot.event
 async def on_command_error(ctx, error):
-    # Suppress "command not found" noise since we use slash commands only
     pass
 
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Startup Routines
+# Startup
 # ──────────────────────────────────────────────────────────────────────────────
 
 async def run_bot():
-    """Initialise DB, load cogs, then start the Discord bot."""
-    await db.initialize()
-    bot.db = db  # expose to all cogs via self.bot.db
+    print("🚀 Initializing bot...")
+
+    try:
+        await db.initialize()
+        print("✅ Database initialised successfully")
+    except Exception as e:
+        print("💥 DB ERROR:", e)
+
+    bot.db = db
 
     for cog in COGS:
         try:
             await bot.load_extension(cog)
-            print(f"✅  Loaded cog: {cog}")
+            print(f"✅ Loaded cog: {cog}")
         except Exception as exc:
-            print(f"❌  Failed to load {cog}: {exc}")
+            print(f"❌ Failed to load {cog}: {exc}")
 
     token = os.getenv("DISCORD_TOKEN")
     if not token:
-        raise RuntimeError("DISCORD_TOKEN environment variable is not set!")
+        raise RuntimeError("DISCORD_TOKEN not set!")
 
-        
+    try:
+        print("🚀 Starting Discord bot...")
+        await bot.start(token)
+    except Exception as e:
+        print("🔥 Bot crashed:", e)
+        await asyncio.sleep(15)
+
+
 def run_fastapi():
-    """Launch uvicorn in the background thread."""
     port = int(os.getenv("PORT", 10000))
     uvicorn.run(api, host="0.0.0.0", port=port, log_level="info")
 
@@ -168,11 +175,12 @@ def run_fastapi():
 if __name__ == "__main__":
     print("🚀 Starting app...")
 
-    api_thread = threading.Thread(target=run_fastapi, daemon=True)
-    api_thread.start()
-    print("🚀 FastAPI thread started")
-
     try:
+        api_thread = threading.Thread(target=run_fastapi, daemon=True)
+        api_thread.start()
+        print("🚀 FastAPI thread started")
+
         asyncio.run(run_bot())
+
     except Exception as e:
-        print("💥 CRASH:", e)
+        print("💥 FULL CRASH:", e)
