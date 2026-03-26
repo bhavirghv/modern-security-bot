@@ -19,6 +19,7 @@ from database import Database
 
 load_dotenv()
 
+print("🔥 MAIN FILE STARTED")
 # ── Intents ────────────────────────────────────────────────────────────────────
 intents = discord.Intents.all()
 
@@ -153,28 +154,6 @@ async def run_bot():
     if not token:
         raise RuntimeError("DISCORD_TOKEN environment variable is not set!")
 
-async def run_bot():
-    """Initialise DB, load cogs, then start the Discord bot."""
-    await db.initialize()
-    bot.db = db
-
-    for cog in COGS:
-        try:
-            await bot.load_extension(cog)
-            print(f"✅ Loaded cog: {cog}")
-        except Exception as exc:
-            print(f"❌ Failed to load {cog}: {exc}")
-
-    token = os.getenv("DISCORD_TOKEN")
-    if not token:
-        raise RuntimeError("DISCORD_TOKEN not set!")
-
-    try:
-        await bot.start(token)
-    except Exception as e:
-        print("🔥 Bot crashed:", e)
-        await asyncio.sleep(15)
-
         
 def run_fastapi():
     """Launch uvicorn in the background thread."""
@@ -187,13 +166,13 @@ def run_fastapi():
 # ──────────────────────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
-    # FastAPI runs in a daemon thread; the Discord bot owns the main event loop.
-    # If the bot exits, the whole process exits (Render will restart it).
+    print("🚀 Starting app...")
+
     api_thread = threading.Thread(target=run_fastapi, daemon=True)
     api_thread.start()
-    print("🚀  FastAPI thread started")
+    print("🚀 FastAPI thread started")
 
     try:
         asyncio.run(run_bot())
-    except KeyboardInterrupt:
-        print("🛑  Shutdown requested.")
+    except Exception as e:
+        print("💥 CRASH:", e)
